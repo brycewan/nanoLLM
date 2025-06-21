@@ -39,6 +39,17 @@ class MultiHeadAttention(nn.Module):
         return self.W_O(output)
     
     
+class FeedForward(nn.Module):
+    def __init__(self, d_model, ffn_hiden, dropout=0.1):
+        super(FeedForward, self).__init__()
+        self.linear1 = nn.Linear(d_model, ffn_hiden)
+        self.dropout = nn.Dropout(p=dropout)
+        self.linear2 = nn.Linear(ffn_hiden, d_model)
+
+    def forward(self, x):
+        return self.linear2(self.dropout(F.gelu(self.linear1(x))))
+    
+    
 class LayerNorm(nn.Module):
     def __init__(self, features, eps=1e-6):
         super(LayerNorm, self).__init__()
