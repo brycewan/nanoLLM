@@ -10,12 +10,12 @@ class MultiHeadAttention(nn.Module):
         assert d_model % n_heads == 0 # Ensure d_model is divisible by n_heads
         self.d_k = d_model // n_heads
         self.n_heads = n_heads
-        self.attn = None
+        # self.attn = None
         
         self.W_Q = nn.Linear(d_model, d_model)
         self.W_K = nn.Linear(d_model, d_model)
         self.W_V = nn.Linear(d_model, d_model)
-        self.dropout = nn.Dropout(p=dropout)
+        # self.dropout = nn.Dropout(p=dropout)
         self.W_O = nn.Linear(d_model, d_model)
         
     def forward(self, query, key, value, mask=None):
@@ -32,8 +32,8 @@ class MultiHeadAttention(nn.Module):
         if mask is not None: # Apply mask if provided
             scores = scores.masked_fill(mask == 0, float('-inf'))
         attn = F.softmax(scores, dim=-1)
-        attn = self.dropout(attn)
-        self.attn = attn  # Save attention weights
+        # attn = self.dropout(attn)
+        # self.attn = attn  # Save attention weights
         output = torch.matmul(attn, value) # Weighted sum
         
         # 3) Concatenate heads and apply final linear transformation
@@ -77,6 +77,7 @@ class SubLayerConnection(nn.Module):
 
 class EncoderLayer(nn.Module):
     def __init__(self, d_model, n_heads, ffn_hiden, dropout=0.1):
+        super(EncoderLayer, self).__init__()
         self.self_attn = MultiHeadAttention(d_model, n_heads, dropout)
         self.sublayer1 = SubLayerConnection(d_model, dropout)
         self.ffn = FeedForward(d_model, ffn_hiden, dropout)
@@ -99,6 +100,7 @@ class Encoder(nn.Module):
     
 class DecoderLayer(nn.Module):
     def __init__(self, d_model, n_heads, ffn_hiden, dropout=0.1):
+        super(DecoderLayer, self).__init__()
         self.self_attn = MultiHeadAttention(d_model, n_heads, dropout)
         self.src_attn = MultiHeadAttention(d_model, n_heads, dropout)
         self.sublayer1 = SubLayerConnection(d_model, dropout)
@@ -126,6 +128,7 @@ class TokenEmbedding(nn.Module):
     def __init__(self, vocab_size, d_model):
         super(TokenEmbedding, self).__init__()
         self.embedding = nn.Embedding(vocab_size, d_model)
+        self.d_model = d_model
         
     def forward(self, x):
         return self.embedding(x) * math.sqrt(self.d_model)
@@ -139,16 +142,17 @@ class PositionalEmbedding(nn.Module):
 
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0) # Add batch dimension, [1, max_len, d_model]
+        self.register_buffer('pe', pe)
 
     def forward(self, x):
-        seq_len = x.shape[1]
-        return self.encoding[:seq_len, :]
+        return self.pe[:, : x.size(1)].requires_grad_(False)
     
 class Embedding(nn.Module):
     def __init__(self, vocab_size, d_model, maxlen=5000, dropout=0.1):
         super(Embedding, self).__init__()
         self.token_embedding = TokenEmbedding(vocab_size, d_model)
-        self.positional_embedding = PositionalEmbedding(d_model, dropout, maxlen)
+        self.positional_embedding = PositionalEmbedding(d_model, maxlen)
         self.dropout = nn.Dropout(p=dropout)
         
     def forward(self, x):
@@ -164,3 +168,51 @@ class Generator(nn.Module):
 
     def forward(self, x):
         return F.log_softmax(self.proj(x), dim=-1)
+    
+    
+class Transformer(nn.Module):
+    def __init__(self, 
+                 src_vocab_size, 
+                 tgt_vocab_size, 
+                 d_model=512, 
+                 n_head=2, 
+                 num_encoder_layers=3,
+                 num_decoder_layers=3,
+                 dim_feedforward=2048,
+                 dropout=0.1,
+                 max_seq_len=1024):
+        super().__init__()
+        self.d_model = d_model
+        self.src_embed = Embedding(src_vocab_size, d_model, max_seq_len, dropout)
+        self.tgt_embed = Embedding(tgt_vocab_size, d_model, max_seq_len, dropout)
+        
+        # Encoder
+        encoder_layer = EncoderLayer(d_model, n_head, dim_feedforward, dropout)
+        self.encoder = Encoder(encoder_layer, num_encoder_layers)
+        
+        # Decoder
+        decoder_layer = DecoderLayer(d_model, n_head, dim_feedforward, dropout)
+        self.decoder = Decoder(decoder_layer, num_decoder_layers)
+        
+        # Output
+        self.generator = Generator(d_model, tgt_vocab_size)
+        
+        # Initialize parameters
+        self._reset_parameters()
+    
+    def _reset_parameters(self):
+        """ Xavier uniform initialization for parameters """
+        for p in self.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
+    
+    def forward(self, src, tgt, src_mask, tgt_mask):
+        memory = self.encode(src, src_mask)
+        output = self.decode(tgt, memory, src_mask, tgt_mask)
+        return self.generator(output)
+    
+    def encode(self, src, src_mask):
+        return self.encoder(self.src_embed(src), src_mask)
+    
+    def decode(self, tgt, memory, src_mask, tgt_mask):
+        return self.decoder(self.tgt_embed(tgt), memory, src_mask, tgt_mask)
