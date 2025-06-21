@@ -120,3 +120,36 @@ class Decoder(nn.Module):
         for layer in self.layers:
             x = layer(x, memory, src_mask, tgt_mask)
         return x
+    
+    
+class TokenEmbedding(nn.Module):
+    def __init__(self, vocab_size, d_model):
+        super(TokenEmbedding, self).__init__()
+        self.embedding = nn.Embedding(vocab_size, d_model)
+        
+    def forward(self, x):
+        return self.embedding(x) * math.sqrt(self.d_model)
+    
+class PositionalEmbedding(nn.Module):
+    def __init__(self, d_model, maxlen=5000):
+        super(PositionalEmbedding, self).__init__()
+        pe = torch.zeros(maxlen, d_model)
+        position = torch.arange(0, maxlen).unsqueeze(1) # [max_len, 1]
+        div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model)) # [d_model/2]
+
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+
+    def forward(self, x):
+        seq_len = x.shape[1]
+        return self.encoding[:seq_len, :]
+    
+class Embedding(nn.Module):
+    def __init__(self, vocab_size, d_model, maxlen=5000, dropout=0.1):
+        super(Embedding, self).__init__()
+        self.token_embedding = TokenEmbedding(vocab_size, d_model)
+        self.positional_embedding = PositionalEmbedding(d_model, dropout, maxlen)
+        self.dropout = nn.Dropout(p=dropout)
+        
+    def forward(self, x):
+        return self.dropout(self.token_embedding(x) + self.positional_embedding(x))
