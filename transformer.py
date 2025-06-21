@@ -37,3 +37,26 @@ class MultiHeadAttention(nn.Module):
         # 3) Concatenate heads and apply final linear transformation
         output = output.transpose(1, 2).contiguous().view(batch_size, -1, self.n_heads * self.d_k)
         return self.W_O(output)
+    
+    
+class LayerNorm(nn.Module):
+    def __init__(self, features, eps=1e-6):
+        super(LayerNorm, self).__init__()
+        self.eps = eps
+        self.weight = nn.Parameter(torch.ones(features))
+        self.bias = nn.Parameter(torch.zeros(features))
+
+    def forward(self, x):
+        mean = x.mean(dim=-1, keepdim=True)
+        std = x.std(dim=-1, keepdim=True)
+        return self.weight * (x - mean) / (std + self.eps) + self.bias
+    
+    
+class SubLayerConnection(nn.Module):
+    def __init__(self, dim, dropout=0.1):
+        super(SubLayerConnection, self).__init__()
+        self.norm = LayerNorm(dim)
+        self.dropout = nn.Dropout(p=dropout)
+
+    def forward(self, x, sublayer):
+        return x + self.dropout(sublayer(self.norm(x))) # Pre-LN & residual connection
