@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import math
+from copy import deepcopy
 
 class MultiHeadAttention(nn.Module):
     def __init__(self, d_model, n_heads, dropout=0.1):
@@ -71,3 +73,26 @@ class SubLayerConnection(nn.Module):
 
     def forward(self, x, sublayer):
         return x + self.dropout(sublayer(self.norm(x))) # Pre-LN & residual connection
+    
+
+class EncoderLayer(nn.Module):
+    def __init__(self, d_model, n_heads, ffn_hiden, dropout=0.1):
+        self.self_attn = MultiHeadAttention(d_model, n_heads, dropout)
+        self.sublayer1 = SubLayerConnection(d_model, dropout)
+        self.ffn = FeedForward(d_model, ffn_hiden, dropout)
+        self.sublayer2 = SubLayerConnection(d_model, dropout)
+        
+    def forward(self, x, mask=None):
+        x = self.sublayer1(x, lambda x: self.self_attn(x, x, x, mask))
+        x = self.sublayer2(x, self.ffn)
+        return x
+    
+class Encoder(nn.Module):
+    def __init__(self, layer, n_blocks):
+        super(Encoder, self).__init__()
+        self.layers = nn.ModuleList([deepcopy(layer) for _ in range(n_blocks)])
+        
+    def forward(self, x, mask=None):
+        for layer in self.layers:
+            x = layer(x, mask)
+        return x
