@@ -96,3 +96,27 @@ class Encoder(nn.Module):
         for layer in self.layers:
             x = layer(x, mask)
         return x
+    
+class DecoderLayer(nn.Module):
+    def __init__(self, d_model, n_heads, ffn_hiden, dropout=0.1):
+        self.self_attn = MultiHeadAttention(d_model, n_heads, dropout)
+        self.src_attn = MultiHeadAttention(d_model, n_heads, dropout)
+        self.sublayer1 = SubLayerConnection(d_model, dropout)
+        self.sublayer2 = SubLayerConnection(d_model, dropout)
+        self.ffn = FeedForward(d_model, ffn_hiden, dropout)
+        self.sublayer3 = SubLayerConnection(d_model, dropout)
+
+    def forward(self, x, memory, src_mask=None, tgt_mask=None):
+        x = self.sublayer1(x, lambda x: self.self_attn(x, x, x, tgt_mask))
+        x = self.sublayer2(x, lambda x: self.src_attn(x, memory, memory, src_mask))
+        x = self.sublayer3(x, self.ffn)
+        return x
+    
+class Decoder(nn.Module):
+    def __init__(self, layer, n_blocks):
+        super(Decoder, self).__init__()
+        self.layers = nn.ModuleList([deepcopy(layer) for _ in range(n_blocks)])
+    def forward(self, x, memory, src_mask=None, tgt_mask=None):
+        for layer in self.layers:
+            x = layer(x, memory, src_mask, tgt_mask)
+        return x
